@@ -23,6 +23,7 @@ from job_mgmt import Job
 
 import requests
 import json
+import random
 
 __version__ = "39.2.4.0"
 
@@ -84,7 +85,7 @@ class Robot(Job):
         :param msg: 微信消息结构
         :return: 处理状态，`True` 成功，`False` 失败
         """
-        # return self.toChitchat(msg)
+        
         
         def extract_rank_content(string):
             pattern = r'^@Luna\s+/rank (.+)'  # 正则表达式模式，以"/rank "开头，捕获后面的内容
@@ -98,7 +99,7 @@ class Robot(Job):
             print(f"/rank {player_tag}")
             return self.get_player_info(msg, player_tag)
 
-        return self.get_player_info(msg)
+        return self.toChitchat(msg)
 
 
     def toChengyu(self, msg: WxMsg) -> bool:
@@ -136,7 +137,7 @@ class Robot(Job):
         # else:  # 接了 ChatGPT，智能回复
         #     q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
         #     rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
-        rsp = "你@我干嘛？"
+        rsp = random.choice(["你@我干嘛？", "你在说什么？", "未知的指令", "烦内", ])
 
         if rsp:
             if msg.from_group():
@@ -172,11 +173,33 @@ class Robot(Job):
             pc_damage_tier = player_competitive_info.get('PC', {}).get('Damage', {}).get('playerCompetitivePCDamageTier')
             pc_support = player_competitive_info.get('PC', {}).get('Support', {}).get('playerCompetitivePCSupport')
             pc_support_tier = player_competitive_info.get('PC', {}).get('Support', {}).get('playerCompetitivePCSupportTier')
+
+            rank_list = ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Master", "Grandmaster", "Champion"]
+            def find_string_in_list(string, my_list):
+                try:
+                    return my_list.index(string)  # 查找字符串的索引
+                except ValueError:
+                    return -1  # 如果找不到，返回-1
+                
+            max_rank = max(find_string_in_list(pc_tank, rank_list), find_string_in_list(pc_damage, rank_list), find_string_in_list(pc_support, rank_list))
             
             result = f"查询到玩家 {player_info.get('playerBaseInfo', {}).get('playerTag', {})} 的信息：\n"
             result += f"Tank: {pc_tank} {pc_tank_tier}\n"
             result += f"Damage: {pc_damage} {pc_damage_tier}\n"
             result += f"Support: {pc_support} {pc_support_tier}\n"
+
+            if max_rank == -1:
+                pass
+            elif max_rank == 0:
+                result += "还得练。"
+            elif max_rank == 1:
+                result += "已经达到了Jaterchen的水平了。"
+            elif max_rank == 2:
+                result += "宗师指日可待。"
+            elif max_rank == 3:
+                result += random.choice(["别炸我白金兄弟！","为什么有人在白金狙击我！"])
+            elif max_rank == 4:
+                result += random.choice(["称霸钻石！","谁来了钻石都得老实。"])
 
             if result:
                 if msg.from_group():
