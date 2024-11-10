@@ -21,6 +21,9 @@ from configuration import Config
 from constants import ChatType
 from job_mgmt import Job
 
+import requests
+import json
+
 __version__ = "39.2.4.0"
 
 
@@ -81,7 +84,22 @@ class Robot(Job):
         :param msg: 微信消息结构
         :return: 处理状态，`True` 成功，`False` 失败
         """
-        return self.toChitchat(msg)
+        # return self.toChitchat(msg)
+        
+        def extract_rank_content(string):
+            pattern = r'^@Luna\s+/rank (.+)'  # 正则表达式模式，以"/rank "开头，捕获后面的内容
+            match = re.match(pattern, string)
+            if match:
+                return match.group(1).replace('#', '-')  # 返回捕获到的内容
+            else:
+                return None  # 如果不匹配，则返回None
+        player_tag = extract_rank_content(msg.content)
+        if player_tag is not None:
+            print(f"/rank {player_tag}")
+            return self.get_player_info(msg, player_tag)
+
+        return self.get_player_info(msg)
+
 
     def toChengyu(self, msg: WxMsg) -> bool:
         """
@@ -113,11 +131,12 @@ class Robot(Job):
     def toChitchat(self, msg: WxMsg) -> bool:
         """闲聊，接入 ChatGPT
         """
-        if not self.chat:  # 没接 ChatGPT，固定回复
-            rsp = "你@我干嘛？"
-        else:  # 接了 ChatGPT，智能回复
-            q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
-            rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
+        # if not self.chat:  # 没接 ChatGPT，固定回复
+        #     rsp = "你@我干嘛？"
+        # else:  # 接了 ChatGPT，智能回复
+        #     q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
+        #     rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
+        rsp = "你@我干嘛？"
 
         if rsp:
             if msg.from_group():
@@ -129,6 +148,65 @@ class Robot(Job):
         else:
             self.LOG.error(f"无法从 ChatGPT 获得答案")
             return False
+
+    def get_player_info(self, msg: WxMsg, player_tag = "AGINGEYE-2963", api_key = 2211030):
+        url = f"http://127.0.0.1:16524/v2/api/playerInfo?playerTag={player_tag}&apiKey={api_key}"
+        
+        try:
+            response = requests.get(url)
+            if response.status_code == 500:
+                raise Exception("请求超时")
+            if 'error' in response.text:  # 检查响应内容中是否包含'error'
+                raise Exception(response.text + "\n请检查输入和生涯是否公开")
+            
+            response.raise_for_status()  # 这将抛出异常，如果响应的状态码不是 200
+            
+            # 解析 JSON 响应
+            player_info = response.json()
+            
+            # 获取 playerCompetitivePC tcn
+            player_competitive_info = player_info.get('playerCompetitiveInfo', {})
+            pc_tank = player_competitive_info.get('PC', {}).get('Tank', {}).get('playerCompetitivePCTank')
+            pc_tank_tier = player_competitive_info.get('PC', {}).get('Tank', {}).get('playerCompetitivePCTankTier')
+            pc_damage = player_competitive_info.get('PC', {}).get('Damage', {}).get('playerCompetitivePCDamage')
+            pc_damage_tier = player_competitive_info.get('PC', {}).get('Damage', {}).get('playerCompetitivePCDamageTier')
+            pc_support = player_competitive_info.get('PC', {}).get('Support', {}).get('playerCompetitivePCSupport')
+            pc_support_tier = player_competitive_info.get('PC', {}).get('Support', {}).get('playerCompetitivePCSupportTier')
+            
+            result = f"查询到玩家 {player_info.get('playerBaseInfo', {}).get('playerTag', {})} 的信息：\n"
+            result += f"Tank: {pc_tank} {pc_tank_tier}\n"
+            result += f"Damage: {pc_damage} {pc_damage_tier}\n"
+            result += f"Support: {pc_support} {pc_support_tier}\n"
+
+            if result:
+                if msg.from_group():
+                    self.sendTextMsg(result, msg.roomid, msg.sender)
+                else:
+                    self.sendTextMsg(result, msg.sender)
+                return True
+            else:
+                self.LOG.error(f"无法获得rank信息")
+                return False
+        
+        except requests.exceptions.RequestException as e:
+            print(f"请求错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
+        except json.JSONDecodeError as e:
+            print(f"JSON 解析错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
+        except Exception as e:
+            print(f"其他错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
+        
+
+
+
 
     def processMsg(self, msg: WxMsg) -> None:
         """当接收到消息的时候，会调用本方法。如果不实现本方法，则打印原始消息。
