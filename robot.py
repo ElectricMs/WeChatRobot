@@ -26,6 +26,7 @@ import json
 import random
 
 __version__ = "39.2.4.0"
+__OverwatchWeChatRobotVersion__ = "0.3"
 
 
 class Robot(Job):
@@ -85,21 +86,69 @@ class Robot(Job):
         :param msg: 微信消息结构
         :return: 处理状态，`True` 成功，`False` 失败
         """
-        
-        
-        def extract_rank_content(string):
-            pattern = r'^@Luna\s+/rank (.+)'  # 正则表达式模式，以"/rank "开头，捕获后面的内容
-            match = re.match(pattern, string)
-            if match:
-                return match.group(1).replace('#', '-')  # 返回捕获到的内容
-            else:
-                return None  # 如果不匹配，则返回None
-        player_tag = extract_rank_content(msg.content)
-        if player_tag is not None:
-            print(f"/rank {player_tag}")
-            return self.get_player_info(msg, player_tag)
+        pattern = r'^@Luna\s+/(.*)' 
+        match = re.match(pattern, msg.content)
+        if match:
+            # @Luna /
+            pattern_help = r'^help$'
+            pattern_rank = r'^rank(.+)'
+            pattern_info = r'^info(.+)'
+            match_help = re.match(pattern_help, match.group(1))
+            match_rank = re.match(pattern_rank, match.group(1))
+            match_info = re.match(pattern_info, match.group(1))
+            if match_help:
+                # @Luna /help
+                return self.toHelp(msg)
 
-        return self.toChitchat(msg)
+            elif match_rank:
+                # @Luna /rank
+                pt = r'^\s+(.+)'
+                match_pt = re.match(pt, match_rank.group(1))
+                if match_pt:
+                    player_tag = match_pt.group(1).replace('#', '-')
+                    print(f"/rank {player_tag}")
+                    return self.get_player_rank(msg, player_tag)
+                else:
+                    return self.toWrongInstruction(msg)
+                
+            elif match_info:
+                # @Luna /info
+                pattern_q = r'^/q(.+)'
+                pattern_c = r'^/c(.+)'
+                match_q = re.match(pattern_q, match_info.group(1))
+                match_c = re.match(pattern_c, match_info.group(1))
+                if match_q:
+                    # @Luna /info/q
+                    pattern_type = r'^/(.+)\s+(.+)'
+                    match_type = re.match(pattern_type, match_q.group(1))
+                    if match_type:
+                        # @Luna /info/q/{type} {tag}
+                        player_tag = match_type.group(2).replace('#', '-')
+                        print(f"/info/q/{match_type.group(1)} {player_tag}")
+                        return self.get_player_quick_info(msg, player_tag = player_tag, type=match_type.group(1))
+                    else:
+                        pattern_type = r'^\s+(.+)'
+                        match_type = re.match(pattern_type, match_q.group(1))
+                        if match_type:
+                            # @Luna /info/q {tag}
+                            player_tag = match_type.group(1).replace('#', '-')
+                            print(f"/info/q {player_tag}")
+                            return self.get_player_quick_info(msg, player_tag = player_tag, type='time-played')
+                        else:
+                            return self.toWrongInstruction(msg)                   
+                elif match_c:
+                    # @Luna /info/c
+                    return self.toWrongInstruction(msg)
+                else:
+                    return self.toWrongInstruction(msg)
+            
+            else:
+                # 是/开头的指令但识别不了
+                return self.toWrongInstruction(msg)
+        
+        else:
+            # 不是 @Luna /开头的指令
+            return self.toChitchat(msg)
 
 
     def toChengyu(self, msg: WxMsg) -> bool:
@@ -137,7 +186,7 @@ class Robot(Job):
         # else:  # 接了 ChatGPT，智能回复
         #     q = re.sub(r"@.*?[\u2005|\s]", "", msg.content).replace(" ", "")
         #     rsp = self.chat.get_answer(q, (msg.roomid if msg.from_group() else msg.sender))
-        rsp = random.choice(["你@我干嘛？", "你在说什么？", "未知的指令", "烦内", ])
+        rsp = random.choice(["你@我干嘛？", "怎么了宝宝？", "未知的指令", "烦内", ])
 
         if rsp:
             if msg.from_group():
@@ -150,7 +199,43 @@ class Robot(Job):
             self.LOG.error(f"无法从 ChatGPT 获得答案")
             return False
 
-    def get_player_info(self, msg: WxMsg, player_tag = "AGINGEYE-2963", api_key = 2211030):
+    def toWrongInstruction(self, msg: WxMsg) -> bool:
+        """处理错误指令
+        """
+        rsp = "未知或不完整的指令，使用“/help”查看帮助"
+        if msg.from_group():
+            self.sendTextMsg(rsp, msg.roomid, msg.sender)
+        else:
+            self.sendTextMsg(rsp, msg.sender)
+        return True
+
+    def toHelp(self, msg: WxMsg) -> bool:
+        """处理帮助指令
+        """
+        rsp = f"""OverwatchWeChatRobot:{__OverwatchWeChatRobotVersion__}
+查询公开生涯的PC端玩家信息
+@机器人以使用指令
+/rank {{player_tag}}  查询玩家PC预设职责段位
+/info/q/{{type}} {{player_tag}}  查询玩家快速相关信息
+/info/c/{{type}} {{player_tag}}  查询玩家竞技相关信息(未完成)
+{{type}}可选内容包括：
+time-played	角色游戏时间
+games-won	角色胜利场数
+weapon-accuracy	角色武器命中率
+eliminations-per-life	角色击杀数 / 每条生命
+critical-hit-accuracy	角色暴击率
+multikill-best	角色最多单次消灭
+objective-kills	角色目标点内击杀
+
+Enjoy！
+        """
+        if msg.from_group():
+            self.sendTextMsg(rsp, msg.roomid, msg.sender)
+        else:
+            self.sendTextMsg(rsp, msg.sender)
+        return True
+
+    def get_player_rank(self, msg: WxMsg, player_tag:str, api_key = 2211030):
         url = f"http://127.0.0.1:16524/v2/api/playerInfo?playerTag={player_tag}&apiKey={api_key}"
         
         try:
@@ -193,7 +278,7 @@ class Robot(Job):
             elif max_rank == 0:
                 result += "还得练。"
             elif max_rank == 1:
-                result += "已经达到了Jaterchen的水平了。"
+                result += "已经有Jaterchen的水平了。"
             elif max_rank == 2:
                 result += "宗师指日可待。"
             elif max_rank == 3:
@@ -227,8 +312,63 @@ class Robot(Job):
                 self.sendTextMsg(e, msg.roomid, msg.sender)
             return False
         
+    def get_player_quick_info(self, msg: WxMsg, player_tag:str, type:str = "time-played", api_key = 2211030):
+        """
+            参数：{type}：必需，请求的排行榜类型，具体参数以解释如下
 
+            type类型	解释说明
+            time-played	角色游戏时间
+            games-won	角色胜利场数
+            weapon-accuracy	角色武器命中率
+            eliminations-per-life	角色击杀数 / 每条生命
+            critical-hit-accuracy	角色暴击率
+            multikill-best	角色最多单次消灭
+            objective-kills	角色目标点内击杀
+        """
+        url = f"http://127.0.0.1:16524/v2/api/playerPCQuickInfo?playerTag={player_tag}&apiKey={api_key}&type={type}"
+        
+        try:
+            response = requests.get(url)
+            if response.status_code == 500:
+                raise Exception(response.text)
+            elif 'error' in response.text:  # 检查响应内容中是否包含'error'
+                raise Exception(response.text)
+            
+            response.raise_for_status()  # 这将抛出异常，如果响应的状态码不是 200
+            
+            # 解析 JSON 响应
+            player_info = response.json()
+            hero_rankings = player_info['heroRankings'][:10]
+               
+            result = f"查询到玩家 {player_info.get('playerTag', {})} 的快速比赛 {player_info.get('type', {})} 信息：\n"
+            for r in hero_rankings:
+                result += f"{r.get('heroName', {})}: {r.get('heroData', {})}\n"
 
+            if result:
+                if msg.from_group():
+                    self.sendTextMsg(result, msg.roomid, msg.sender)
+                else:
+                    self.sendTextMsg(result, msg.sender)
+                return True
+            else:
+                self.LOG.error(f"无法获得信息")
+                return False
+        
+        except requests.exceptions.RequestException as e:
+            print(f"请求错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
+        except json.JSONDecodeError as e:
+            print(f"JSON 解析错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
+        except Exception as e:
+            print(f"其他错误: {e}，请联系管理员")
+            if msg.from_group():
+                self.sendTextMsg(e, msg.roomid, msg.sender)
+            return False
 
 
     def processMsg(self, msg: WxMsg) -> None:
