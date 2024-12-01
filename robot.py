@@ -230,7 +230,7 @@ class Robot(Job):
         """
         rsp = f"""OverwatchWeChatRobot:v{__OverwatchWeChatRobotVersion__}
 查询公开生涯的PC端玩家信息
-@机器人以使用指令
+请手动@机器人
 /rank {{player_tag}}  查询玩家PC预设职责段位
 /info/q/{{type}} {{player_tag}}  查询玩家快速相关信息
 /info/c/{{type}} {{player_tag}}  查询玩家竞技相关信息
@@ -301,7 +301,10 @@ Enjoy！
             elif max_rank == 3:
                 result += random.choice(["别炸我白金兄弟！","为什么有人在白金狙击我！"])
             elif max_rank == 4:
-                result += random.choice(["称霸钻石！","谁来了钻石都得老实。"])
+                result += random.choice(["称霸钻石！","蒙狗来了钻石都得老实。"])
+            elif max_rank == 5:
+                result += "半步宗师，恐怖如斯！"
+
 
             if result:
                 if msg.from_group():
@@ -579,3 +582,15 @@ Enjoy！
         news = News().get_important_news()
         for r in receivers:
             self.sendTextMsg(news, r)
+
+    def gameReminder(self) -> None:
+        """
+        定时任务：每天晚上 9 点发送游戏提醒
+        """
+        receivers = self.config.NEWS
+        if not receivers:
+            return
+        
+        text = "该上号咯( つ•̀ω•́)つ\n今晚一定上大分！"
+        for r in receivers:
+            self.sendTextMsg(text, r)
